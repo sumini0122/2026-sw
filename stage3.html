@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[3단계] 트리 시각화 — 허프만</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f4f6; color: #1f2937; font: 15px/1.45 Arial, sans-serif; }
+    .wrap { max-width: 1100px; margin: 20px auto; padding: 0 12px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin: 10px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    h1 { margin: 0 0 6px; font-size: 34px; }
+    h3 { margin: 0 0 10px; font-size: 24px; }
+    .subtitle { margin: 0 0 10px; color: #4b5563; }
+    textarea { width: 100%; min-height: 90px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    button { border: 0; color: #fff; background: #2563eb; padding: 8px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; margin: 8px 6px 0 0; }
+    .secondary { background: #64748b; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 6px; border-bottom: 1px solid #edf2f7; text-align: left; }
+    th { background: #f8fafc; }
+    #tree { min-height: 360px; overflow: auto; border-radius: 10px; padding: 8px; background: linear-gradient(180deg, #0f1f3f, #09152f); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>허프만 트리 시각화 — 3단계</h1>
+    <p class="subtitle">2단계 기능 + SVG로 허프만 트리를 그립니다. (병합 단계 목록은 4단계)</p>
+
+    <div class="card">
+      <label for="input"><b>입력 문자열</b></label>
+      <textarea id="input" placeholder="예: aaaaaabbbbbbbbbccdd"></textarea>
+      <button id="run">트리 생성</button>
+      <button id="reset" class="secondary">초기화</button>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h3>1) 문자 빈도</h3><div id="freq">결과가 여기에 표시됩니다.</div></div>
+      <div class="card"><h3>2) 인코딩 테이블</h3><div id="codes">결과가 여기에 표시됩니다.</div></div>
+    </div>
+
+    <div class="card"><h3>3) 허프만 트리</h3><div id="tree">트리를 생성하면 표시됩니다.</div></div>
+
+    <div class="card"><h3>4) 압축 결과</h3><div id="result">결과가 여기에 표시됩니다.</div></div>
+  </div>
+
+  <script>
+    const inputEl = document.getElementById("input");
+    const freqEl = document.getElementById("freq");
+    const treeEl = document.getElementById("tree");
+    const codesEl = document.getElementById("codes");
+    const resultEl = document.getElementById("result");
+
+    const escapeHtml = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const printableChar = (ch) => (ch === " " ? "space" : ch === "\n" ? "\\n" : ch === "\t" ? "\\t" : ch);
+    const makeTable = (headers, rows) => `<table><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr>${rows.join("")}</table>`;
+
+    function getFrequencyMap(text) {
+      const map = new Map();
+      for (const ch of text) map.set(ch, (map.get(ch) || 0) + 1);
+      return map;
+    }
+
+    class MinHeap {
+      constructor(compare) {
+        this.data = [];
+        this.compare = compare;
+      }
+      size() { return this.data.length; }
+      push(value) {
+        this.data.push(value);
+        for (let i = this.data.length - 1; i > 0;) {
+          const parent = (i - 1) >> 1;
+          if (this.compare(this.data[i], this.data[parent]) >= 0) break;
+          [this.data[i], this.data[parent]] = [this.data[parent], this.data[i]];
+          i = parent;
+        }
+      }
+      pop() {
+        if (this.data.length === 0) return null;
+        const top = this.data[0];
+        const end = this.data.pop();
+        if (this.data.length > 0) {
+          this.data[0] = end;
+          for (let i = 0;;) {
+            const left = i * 2 + 1;
+            const right = left + 1;
+            let smallest = i;
+            if (left < this.data.length && this.compare(this.data[left], this.data[smallest]) < 0) smallest = left;
+            if (right < this.data.length && this.compare(this.data[right], this.data[smallest]) < 0) smallest = right;
+            if (smallest === i) break;
+            [this.data[i], this.data[smallest]] = [this.data[smallest], this.data[i]];
+            i = smallest;
+          }
+        }
+        return top;
+      }
+    }
+
+    function buildHuffmanTree(freqMap) {
+      const heap = new MinHeap((a, b) => a.freq - b.freq || String(a.char || "").localeCompare(String(b.char || "")));
+      for (const [char, freq] of freqMap.entries()) heap.push({ char, freq, left: null, right: null });
+      if (heap.size() === 1) {
+        const only = heap.pop();
+        return { char: null, freq: only.freq, left: only, right: null };
+      }
+      while (heap.size() > 1) {
+        const left = heap.pop();
+        const right = heap.pop();
+        heap.push({ char: null, freq: left.freq + right.freq, left, right });
+      }
+      return heap.pop();
+    }
+
+    function buildCodeMap(node, path = "", map = new Map()) {
+      if (!node) return map;
+      if (!node.left && !node.right && node.char !== null) map.set(node.char, path || "0");
+      buildCodeMap(node.left, path + "0", map);
+      buildCodeMap(node.right, path + "1", map);
+      return map;
+    }
+
+    function renderTree(root) {
+      if (!root) return "트리가 없습니다.";
+      const positions = [];
+      const positionByNode = new Map();
+      const leafGap = 140;
+      const leftPadding = 70;
+      const levelGap = 96;
+      let leafOrder = 0;
+
+      function layout(node, depth) {
+        if (!node) return null;
+        const leftPos = layout(node.left, depth + 1);
+        const rightPos = layout(node.right, depth + 1);
+        const x = !leftPos && !rightPos ? leftPadding + leafOrder++ * leafGap : leftPos && rightPos ? (leftPos.x + rightPos.x) / 2 : (leftPos || rightPos).x;
+        const pos = { node, x, y: depth * levelGap + 42 };
+        positions.push(pos);
+        positionByNode.set(node, pos);
+        return pos;
+      }
+
+      layout(root, 0);
+      let edges = "";
+      let nodes = "";
+
+      for (const pos of positions) {
+        if (pos.node.left) {
+          const child = positionByNode.get(pos.node.left);
+          edges += `<line x1="${pos.x}" y1="${pos.y}" x2="${child.x}" y2="${child.y}" stroke="#9fb4d9" stroke-width="2"/>`;
+          edges += `<text x="${(pos.x + child.x) / 2}" y="${(pos.y + child.y) / 2 - 6}" fill="#d7e2ff" font-size="15" font-weight="700">0</text>`;
+        }
+        if (pos.node.right) {
+          const child = positionByNode.get(pos.node.right);
+          edges += `<line x1="${pos.x}" y1="${pos.y}" x2="${child.x}" y2="${child.y}" stroke="#9fb4d9" stroke-width="2"/>`;
+          edges += `<text x="${(pos.x + child.x) / 2 + 4}" y="${(pos.y + child.y) / 2 - 6}" fill="#d7e2ff" font-size="15" font-weight="700">1</text>`;
+        }
+        const isLeaf = !pos.node.left && !pos.node.right;
+        const label = isLeaf ? `${printableChar(pos.node.char)}:${pos.node.freq}` : `${pos.node.freq}`;
+        nodes += `<circle cx="${pos.x}" cy="${pos.y}" r="34" fill="${isLeaf ? "#1f8a63" : "#153d7b"}" fill-opacity=".95" stroke="${isLeaf ? "#5ee2b0" : "#7db4ff"}" stroke-width="3"/>`;
+        nodes += `<text x="${pos.x}" y="${pos.y - 3}" text-anchor="middle" fill="#eaf0ff" font-size="20" font-weight="700">${escapeHtml(label)}</text>`;
+      }
+
+      const width = Math.max(1160, Math.max(...positions.map((p) => p.x)) + leftPadding);
+      const height = Math.max(420, Math.max(...positions.map((p) => p.y)) + 86);
+      return `<svg width="${width}" height="${height}">${edges}${nodes}</svg>`;
+    }
+
+    function run() {
+      const text = inputEl.value;
+      if (!text) return alert("문자열을 입력하세요.");
+
+      const freqMap = getFrequencyMap(text);
+      const root = buildHuffmanTree(freqMap);
+      const codeMap = buildCodeMap(root);
+
+      const originalBits = text.length * 8;
+      const compressedBits = [...text].reduce((sum, ch) => sum + codeMap.get(ch).length, 0);
+      const ratio = ((compressedBits / originalBits) * 100).toFixed(2);
+
+      freqEl.innerHTML = makeTable(
+        ["문자", "빈도"],
+        [...freqMap.entries()].sort((a, b) => b[1] - a[1]).map(([ch, count]) => `<tr><td>${escapeHtml(printableChar(ch))}</td><td>${count}</td></tr>`)
+      );
+      treeEl.innerHTML = renderTree(root);
+      codesEl.innerHTML = makeTable(
+        ["문자", "허프만 코드", "빈도", "총 비트"],
+        [...codeMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([ch, code]) => `<tr><td>${escapeHtml(printableChar(ch))}</td><td>${code}</td><td>${freqMap.get(ch)}</td><td>${code.length * freqMap.get(ch)}</td></tr>`)
+      );
+      resultEl.innerHTML = `원본 아스키 비트 수: <b>${originalBits} bits</b><br>압축 후 비트 수: <b>${compressedBits} bits</b><br>압축률: <b>${ratio}%</b>`;
+    }
+
+    function reset() {
+      inputEl.value = "";
+      freqEl.textContent = "결과가 여기에 표시됩니다.";
+      treeEl.textContent = "트리를 생성하면 표시됩니다.";
+      codesEl.textContent = "결과가 여기에 표시됩니다.";
+      resultEl.textContent = "결과가 여기에 표시됩니다.";
+    }
+
+    document.getElementById("run").addEventListener("click", run);
+    document.getElementById("reset").addEventListener("click", reset);
+  </script>
+</body>
+</html>
