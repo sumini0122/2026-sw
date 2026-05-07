@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[1단계] 문자 빈도 — 허프만</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f4f6; color: #1f2937; font: 15px/1.45 Arial, sans-serif; }
+    .wrap { max-width: 1100px; margin: 20px auto; padding: 0 12px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin: 10px 0; }
+    h1 { margin: 0 0 6px; font-size: 34px; }
+    .subtitle { margin: 0 0 10px; color: #4b5563; }
+    textarea { width: 100%; min-height: 90px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    button { border: 0; color: #fff; background: #2563eb; padding: 8px 12px; border-radius: 8px; font-weight: 700; cursor: pointer; margin: 8px 6px 0 0; }
+    .secondary { background: #64748b; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 6px; border-bottom: 1px solid #edf2f7; text-align: left; }
+    th { background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>허프만 트리 시각화 — 1단계</h1>
+    <p class="subtitle">문자열 입력 후 문자별 빈도만 계산합니다.</p>
+
+    <div class="card">
+      <label for="input"><b>입력 문자열</b></label>
+      <textarea id="input" placeholder="예: aaaaaabbbbbbbbbccdd"></textarea>
+      <button id="run">빈도 분석</button>
+      <button id="reset" class="secondary">초기화</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:24px;">문자 빈도</h3>
+      <div id="freq">결과가 여기에 표시됩니다.</div>
+    </div>
+  </div>
+
+  <script>
+    const inputEl = document.getElementById("input");
+    const freqEl = document.getElementById("freq");
+    const escapeHtml = (t) => t.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    const printableChar = (c) => (c === " " ? "space" : c === "\n" ? "\\n" : c === "\t" ? "\\t" : c);
+    const makeTable = (headers, rows) => `<table><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr>${rows.join("")}</table>`;
+
+    function getFrequencyMap(text) {
+      const map = new Map();
+      for (const ch of text) map.set(ch, (map.get(ch) || 0) + 1);
+      return map;
+    }
+
+    function run() {
+      const text = inputEl.value;
+      if (!text) return alert("문자열을 입력하세요.");
+      const fm = getFrequencyMap(text);
+      freqEl.innerHTML = makeTable(
+        ["문자", "빈도"],
+        [...fm.entries()].sort((a, b) => b[1] - a[1]).map(([ch, f]) => `<tr><td>${escapeHtml(printableChar(ch))}</td><td>${f}</td></tr>`)
+      );
+    }
+
+    function reset() {
+      inputEl.value = "";
+      freqEl.textContent = "결과가 여기에 표시됩니다.";
+    }
+
+    document.getElementById("run").addEventListener("click", run);
+    document.getElementById("reset").addEventListener("click", reset);
+  </script>
+</body>
+</html>
